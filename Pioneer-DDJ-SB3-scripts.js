@@ -360,7 +360,7 @@ PioneerDDJSB3.Deck = function (deckNumber) {
     this.tempoFader = new components.Pot({
         inKey: 'rate',
         //         relative: true,
-        invert: true,
+        //invert: true,
     });
 
     this.forEachComponent(function (c) {
@@ -371,7 +371,7 @@ PioneerDDJSB3.Deck = function (deckNumber) {
         }
     });
 
-    engine.setValue("[Channel" + deckNumber + "]", "rate_dir", -1);
+    engine.setValue("[Channel" + deckNumber + "]", "rate_dir", 1);
 };
 PioneerDDJSB3.Deck.prototype = components.ComponentContainer.prototype;
 
@@ -1148,11 +1148,10 @@ PioneerDDJSB3.updateHotCueLeds = function() {
         var group = '[Channel' + channelIdx + ']';
         var channel = PioneerDDJSB3.hotCueLedStates[group];
 
-
         for (var hotCue = 5; hotCue <= 8; hotCue++) {
             var padNum = hotCue - 1;
 
-            if (channel.isShifted && channel.states[hotCue]) {
+            if (!channel.isShifted && channel.states[hotCue]) {
                 PioneerDDJSB3.padLedControl(group, PioneerDDJSB3.ledGroups.hotCue, shiftedGroup, padNum, false, true);
             } else {
                 PioneerDDJSB3.padLedControl(group, PioneerDDJSB3.ledGroups.hotCue, shiftedGroup, padNum, false, false);
