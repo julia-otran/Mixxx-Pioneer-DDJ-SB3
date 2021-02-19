@@ -90,6 +90,54 @@ PioneerDDJSB3.looprollIntervals = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8];
 ///////////////////////////////////////////////////////////////
 //               INIT, SHUTDOWN & GLOBAL HELPER              //
 ///////////////////////////////////////////////////////////////
+PioneerDDJSB3.trackLoaded = function(value, group, control) {
+    var deckIndex = PioneerDDJSB3.channelGroups[group];
+
+    if (value) {
+        midi.sendShortMsg(0x96, 0x46 + deckIndex, 0x7F);
+    } else {
+        midi.sendShortMsg(0x96, 0x46 + deckIndex, 0x0);
+    }
+}
+
+// When unloading a deck, it should pass 0 for BPM
+PioneerDDJSB3.updateBPM = function(bpm, group, control) {
+    var bpmValue = Math.round(bpm * 100);
+    var bpmBits = bpmValue.toString(2).split("");
+
+    var bpmBitsPadded = [];
+
+    var offset = 16 - bpmBits.length;
+    
+    for (var i=0; i<16; i++) {
+        if (i < offset) {
+            bpmBitsPadded[i] = '0';
+        } else {
+            bpmBitsPadded[i] = bpmBits[i - offset]
+        }
+    }
+
+    var bytes = [];
+
+    for (var i=0; i<4; i++) {
+        var mbyte = 0;
+
+        for (var j=0; j<4; j++) {
+            var bitIndex = (i * 4) + j;
+            var bit = parseInt(bpmBitsPadded[bitIndex]);
+            mbyte = mbyte | (bit << (3 - j));
+        }
+
+        bytes[i] = mbyte;
+    }
+
+    var deckIndex = PioneerDDJSB3.channelGroups[group];
+    var deckByte = 0x11 + deckIndex;
+
+    var sysexMessage = [0xF0, 0x00, 0x20, 0x7F, deckByte, 0x00, 0x00, bytes[0], bytes[1], bytes[2], bytes[3], 0xF7];
+    midi.sendSysexMsg(sysexMessage, sysexMessage.length);
+};
+
 PioneerDDJSB3.longButtonPress = false;
 
 PioneerDDJSB3.flasher = {};
@@ -190,6 +238,9 @@ PioneerDDJSB3.channelsToEffectUnitNumber = {
 };
 
 PioneerDDJSB3.init = function (id) {
+    var initSysBytes = [0xF0, 0x00, 0x20, 0x7F, 0x03, 0x01, 0xF7];
+    midi.sendSysexMsg(initSysBytes, initSysBytes.length);
+
     PioneerDDJSB3.shiftPressed = false;
 
     PioneerDDJSB3.chFaderStart = [
@@ -238,9 +289,6 @@ PioneerDDJSB3.init = function (id) {
 
     // request the positions of the knobs and faders from the controller
     midi.sendShortMsg(0x9B, 0x09, 0x7f);
-
-    var initSysBytes = [0xF0, 0x00, 0x20, 0x7F, 0x03, 0x01, 0xF7];
-    midi.sendSysexMsg(initSysBytes, initSysBytes.length);
 
     PioneerDDJSB3.flasher.init();
     PioneerDDJSB3.initFlashingPadLedControl();
@@ -373,8 +421,7 @@ PioneerDDJSB3.Deck = function (deckNumber) {
 
     this.tempoFader = new components.Pot({
         inKey: 'rate',
-        //         relative: true,
-        //invert: true,
+        invert: true,
     });
 
     this.forEachComponent(function (c) {
@@ -385,7 +432,9 @@ PioneerDDJSB3.Deck = function (deckNumber) {
         }
     });
 
-    engine.setValue("[Channel" + deckNumber + "]", "rate_dir", 1);
+    PioneerDDJSB3.updateBPM(0, "[Channel" + deckNumber + "]");
+    this.loadConnection = engine.makeConnection("[Channel" + deckNumber + "]", 'track_loaded', PioneerDDJSB3.trackLoaded);
+    this.bpmConnection = engine.makeConnection("[Channel" + deckNumber + "]", 'bpm', PioneerDDJSB3.updateBPM);
 };
 PioneerDDJSB3.Deck.prototype = components.ComponentContainer.prototype;
 
@@ -801,35 +850,33 @@ PioneerDDJSB3.shiftKeyLockButton = function (channel, control, value, status, gr
 
 PioneerDDJSB3.deck1Button = function (channel, control, value, status, group) {
     if (value) {
+        var bpm = engine.getValue(group, 'bpm');
+        PioneerDDJSB3.updateBPM(bpm, group);
         midi.sendShortMsg(0xB0, 0x02, 0x0);
-        var deck3Deactivate = [0xF0, 0x00, 0x20, 0x7F, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xF7];
-        midi.sendSysexMsg(deck3Deactivate, deck3Deactivate.length);
-        PioneerDDJSB3.deck3Active = false;
     }
 };
 
 PioneerDDJSB3.deck2Button = function (channel, control, value, status, group) {
     if (value) {
+        var bpm = engine.getValue(group, 'bpm');
+        PioneerDDJSB3.updateBPM(bpm, group);
         midi.sendShortMsg(0xB1, 0x02, 0x0);
-        var deck4Deactivate = [0xF0, 0x00, 0x20, 0x7F, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xF7];
-        midi.sendSysexMsg(deck4Deactivate, deck4Deactivate.length);
     }
 };
 
 PioneerDDJSB3.deck3Button = function (channel, control, value, status, group) {
     if (value) {
         midi.sendShortMsg(0xB2, 0x02, 0x0);
-        var deck3Activate = [0xF0, 0x00, 0x20, 0x7F, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xF7];
-        midi.sendSysexMsg(deck3Activate, deck3Activate.length);
+        var bpm = engine.getValue(group, 'bpm');
+        PioneerDDJSB3.updateBPM(bpm, group);
     }
 };
 
 PioneerDDJSB3.deck4Button = function (channel, control, value, status, group) {
     if (value) {
+        var bpm = engine.getValue(group, 'bpm');
+        PioneerDDJSB3.updateBPM(bpm, group);
         midi.sendShortMsg(0xB3, 0x02, 0x0);
-        var deck4Activate = [0xF0, 0x00, 0x20, 0x7F, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xF7];
-        midi.sendSysexMsg(deck4Activate, deck4Activate.length);
-        PioneerDDJSB3.deck4Active = true;
     }
 };
 
